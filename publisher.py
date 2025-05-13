@@ -1,81 +1,88 @@
-import time
-import threading
+#!/usr/bin/env python3
+import threading, time
 import paho.mqtt.client as mqtt
+from typing_extensions import Self
 
-BROKER_HOST = 'localhost'
-BROKER_PORT = 1883
+BROKER = 'localhost'
+PORT   = 1883
+NUM_THREADS = 10
 
-config = {'qos': 0, 'delay': 0, 'messagesize': 0, 'instancecount': 0}
-go_event = threading.Event()
+class PubWorker(threading.Thread):
+    def __init__(self, instance_id):
+        super().__init__(daemon=True)
+        self.id = instance_id
+        # per-thread config and event
+        self.config = {
+            'qos': 0,
+            'delay': 0,
+            'messagesize': 0,
+            'instancecount': 0
+        }
 
-# MQTT control callbacks
+        self.go_event = threading.Event()
+        # set up a client just for this thread
+        # self.client = mqtt.Client(f'pub-{instance_id:02d}', callback_api_version=1)
+        self.client = mqtt.Client(client_id=f'pub-{instance_id:02d}')
+        self.client.on_connect = self.on_connect
+        self.client.on_message = self.on_message
+        self.client.connect(BROKER, PORT)
+        self.client.loop_start()
 
-def on_connect(client, userdata, flags, rc):
-    print(f"[Publisher] Connected (rc={rc})")
-    for topic in ('request/qos','request/delay','request/messagesize','request/instancecount','request/go'):
-        client.subscribe(topic)
+    def on_connect(self, client, userdata, flags, rc):
+        # subscribe to control topics
+        client.subscribe('request/qos')
+        client.subscribe('request/delay')
+        client.subscribe('request/messagesize')
+        client.subscribe('request/instancecount')
+        client.subscribe('request/go')
 
-def on_message(client, userdata, msg):
-    t = msg.topic.split('/')[-1]
-    payload = msg.payload.decode()
-    if t in config:
-        config[t] = int(payload)
-    elif t == 'go':
-        go_event.set()
+    def on_message(self, client, userdata, msg):
+        topic = msg.topic.split('/')[-1]
+        val  = msg.payload.decode()
+        if topic in self.config:
+            self.config[topic] = int(val)
+        elif topic == 'go':
+            self.go_event.set()
 
-# Per-instance publisher thread
-
-def publisher_thread(instance_id: int):
-    qos = config['qos']
-    delay_ms = config['delay']
-    size = config['messagesize']
-    payload = 'x' * size
-    topic = f'counter/{instance_id}/{qos}/{delay_ms}/{size}'
-
-    client = mqtt.Client(client_id=f'pub-{instance_id:02d}')
-    client.connect(BROKER_HOST, BROKER_PORT)
-    client.loop_start()
-
-    end_time = time.time() + 30
-    count = 0
-    while time.time() < end_time:
-        timestamp = int(time.time() * 1000)
-        client.publish(topic, f'{count}:{timestamp}:{payload}', qos=qos)
-        count += 1
-        if delay_ms:
-            time.sleep(delay_ms / 1000)
-
-    client.loop_stop()
-    client.disconnect()
-    print(f"[Publisher-{instance_id}] sent {count} messages")
-
-# Main control loop
-
-def main():
-    control = mqtt.Client(client_id='publisher_control')
-    control.on_connect = on_connect
-    control.on_message = on_message
-    control.connect(BROKER_HOST, BROKER_PORT)
-    control.loop_start()
-    print("Publisher awaiting commands...")
-
-    try:
+    def run(self):
+        # print(f"[Worker-{self.id}] ready, waiting for GO")
         while True:
-            go_event.wait()
-            print("[Publisher] GO received—launching threads")
-            threads = []
-            for i in range(1, config['instancecount'] + 1):
-                t = threading.Thread(target=publisher_thread, args=(i,))
-                t.start()
-                threads.append(t)
-            for t in threads:
-                t.join()
-            go_event.clear()
-    except KeyboardInterrupt:
-        print("[Publisher] Interrupted—exiting")
-    finally:
-        control.loop_stop()
-        control.disconnect()
+            # wait until analyser sends "go"
+            print(f"[Worker-{self.id}] ready, waiting for GO")
+            self.go_event.wait()
+            self.go_event.clear()
+
+            # only active if id ≤ instancecount
+            if self.id <= self.config['instancecount']:
+                qos   = self.config['qos']
+                delay = self.config['delay']
+                size  = self.config['messagesize']
+                payload = 'x' * size
+                topic   = f"counter/{self.id}/{qos}/{delay}/{size}"
+                end_t = time.time() + 30
+                count = 0
+                print(f"[Worker-{self.id}] starting burst on {topic}")
+                while time.time() < end_t:
+                    ts = int(time.time()*1000)
+                    msg = f"{count}:{ts}:{payload}"
+                    self.client.publish(topic, msg, qos=qos)
+                    count += 1
+                    if delay: time.sleep(delay/1000)
+                print(f"[Worker-{self.id}] sent {count} msgs")
+            else:
+                print(f"[Worker-{self.id}] inactive (instancecount={self.config['instancecount']})")
 
 if __name__ == '__main__':
-    main()
+    # spawn all 10 workers up front
+    workers = [PubWorker(i) for i in range(1, NUM_THREADS+1)]
+    for w in workers: w.start()
+
+    # keep the main thread alive
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print("Shutting down…")
+        for w in workers:
+            w.client.loop_stop()
+            w.client.disconnect()
