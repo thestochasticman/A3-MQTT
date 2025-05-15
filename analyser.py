@@ -74,7 +74,7 @@ def connect_sub(qos: int, instances: int, subscribe_event, total_counts_event):
     )
 
 def run_test(pub_qos, sub_qos, delay, size, instances):
-
+    
     test_msgs.clear()
     sys_stats.clear()
     subscribe_event = threading.Event()
@@ -87,12 +87,12 @@ def run_test(pub_qos, sub_qos, delay, size, instances):
     sub_client.loop_start()
     subscribe_event.wait()
     subscribe_event.clear()
-
     # 2) Control‐publisher to send parameters + GO
     pub_client = mqtt.Client(
         client_id='analyser_pub',
         callback_api_version=mqtt.CallbackAPIVersion.VERSION2
     )
+    print('publishing')
     pub_client.connect(BROKER_HOST, BROKER_PORT)
     pub_client.loop_start()
     pub_client.publish('request/qos',           str(pub_qos))
@@ -100,7 +100,7 @@ def run_test(pub_qos, sub_qos, delay, size, instances):
     pub_client.publish('request/messagesize',   str(size))
     pub_client.publish('request/instancecount', str(instances))
     pub_client.publish('request/go',            '1')
-
+    
 
     # # 3) Let the 30 s burst run + 2 s buffer
     # time.sleep(32)
@@ -136,11 +136,7 @@ def run_test(pub_qos, sub_qos, delay, size, instances):
         'received': total_received
     }
 
-
-
 def main():
-    # Launch the publisher subprocess
-    pub_proc = subprocess.Popen(['python3', PUBLISHER_SCRIPT])
 
     # Build the full list of 162 tests
     tests = [
@@ -167,11 +163,10 @@ def main():
         with open(RESULTS_FILE, 'a', newline='') as f:
             writer = csv.DictWriter(f, fieldnames=result.keys())
             writer.writerow(result)
-        break
+        # break
         print(f"Completed {params}: received={result['received']} msgs")
 
     # Tear down the publisher
-    pub_proc.terminate()
     print("\nAll tests complete. Results in", RESULTS_FILE)
 
 if __name__ == '__main__':

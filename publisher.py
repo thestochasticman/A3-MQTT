@@ -19,17 +19,32 @@ class PubWorker(threading.Thread):
             'messagesize': 0,
             'instancecount': 0
         }
-
+        self.subscribe_event = threading.Event()
+        self.total_subscriptions = 5
+        self.current_subscriptions = 0
         self.go_event = threading.Event()
         self.client = mqtt.Client(client_id=f'pub-{instance_id:02d}', callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
         self.client.on_connect = self.on_connect
         self.client.on_message = self.on_message
+        self.client.on_subscribe = self.on_subscribe
         self.client.connect(BROKER, PORT)
         self.client.loop_start()
+  
+
+    def on_subscribe(self, client, userdata, mid, rc, properties=None):
+        if rc[0].is_failure:
+            print(f"Broker rejected Subscription: {rc[0]}")
+        else:
+            self.current_subscriptions += 1
+            if self.current_subscriptions >= self.total_subscriptions:
+                self.subscribe_event.set()
+                # print('subscribed', self.total_subscriptions)
+            # print(f"Broker granted the following QOS", print(mid))
 
     def on_connect(self, client, userdata, flags, rc, properties=None):
         # subscribe to control topics
-        client.subscribe('request/qos')
+
+        client.subscribe('request/qos',)
         client.subscribe('request/delay')
         client.subscribe('request/messagesize')
         client.subscribe('request/instancecount')
@@ -38,16 +53,19 @@ class PubWorker(threading.Thread):
     def on_message(self, client, userdata, msg):
         topic = msg.topic.split('/')[-1]
         val  = msg.payload.decode()
+        print(topic)
         if topic in self.config:
             self.config[topic] = int(val)
         elif topic == 'go':
             self.go_event.set()
 
     def run(self):
-        # print(f"[Worker-{self.id}] ready, waiting for GO")
+        self.subscribe_event.wait()
+        self.subscribe_event.clear()
+        print(f"[Worker-{self.id}] ready, waiting for GO")
         while True:
             # wait until analyser sends "go"
-            print(f"[Worker-{self.id}] ready, waiting for GO")
+           
             self.go_event.wait()
             self.go_event.clear()
 
@@ -87,4 +105,3 @@ if __name__ == '__main__':
         for w in workers:
             w.client.loop_stop()
             w.client.disconnect()
-
