@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+#publisher.py
 import threading, time
 import paho.mqtt.client as mqtt
 
@@ -19,8 +21,6 @@ class PubWorker(threading.Thread):
         }
 
         self.go_event = threading.Event()
-        # set up a client just for this thread
-        # self.client = mqtt.Client(f'pub-{instance_id:02d}', callback_api_version=1)
         self.client = mqtt.Client(client_id=f'pub-{instance_id:02d}', callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
         self.client.on_connect = self.on_connect
         self.client.on_message = self.on_message
@@ -68,9 +68,11 @@ class PubWorker(threading.Thread):
                     count += 1
                     if delay: time.sleep(delay/1000)
                 print(f"[Worker-{self.id}] sent {count} msgs")
+                done_topic = f"total_counts/{str(self.id)}"
+                self.client.publish(done_topic, str(count), qos=2)
             else:
                 print(f"[Worker-{self.id}] inactive (instancecount={self.config['instancecount']})")
-
+                
 if __name__ == '__main__':
     # spawn all 10 workers up front
     workers = [PubWorker(i) for i in range(1, NUM_THREADS+1)]
