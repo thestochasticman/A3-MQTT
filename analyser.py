@@ -8,13 +8,12 @@ and logging everything that arrives on counter/# and $SYS/#.
 
 import os
 import csv
+import sys
 import time
 import subprocess
 import paho.mqtt.client as mqtt
+import threading
 
-# ─────────────────────────────────────────────────────
-# Configuration
-# ─────────────────────────────────────────────────────
 
 BROKER_HOST     = 'localhost'
 BROKER_PORT     = 1883
@@ -23,52 +22,42 @@ PUBLISHER_SCRIPT = os.path.join(os.path.dirname(__file__), 'publisher.py')
 RESULTS_FILE    = 'mqtt_results.csv'
 SYS_LOG_DIR     = 'sys_logs'
 
-# In‐memory logs for each test
-test_msgs = {}   # topic -> list of (topic, payload, recv_ts)
-sys_stats = []   # list of (topic, payload, recv_ts)
-
-
-# ─────────────────────────────────────────────────────
-# Helpers
-# ─────────────────────────────────────────────────────
+TOTAL_SUBSCRIPTIONS = 12
 
 def ensure_dir(path):
     os.makedirs(path, exist_ok=True)
 
-
-# ─────────────────────────────────────────────────────
-# Subscriber callbacks
-# ─────────────────────────────────────────────────────
-
-def on_connect_sub(client, userdata, flags, rc, properties=None):
+def on_connect_sub(client: mqtt.Client, userdata, flags, rc, properties=None):
     sub_qos = userdata.get('sub_qos', 0)
     client.subscribe('counter/#', qos=sub_qos)
     client.subscribe('$SYS/#', qos=0)
+    for i in range(1, 11):
+        client.subscribe(f"publisher/{str(i)}/total_count", qos=2)
 
-def on_message_sub(client, userdata, msg):
-    now = int(time.time() * 1000)
-    topic = msg.topic
-    payload = msg.payload.decode(errors='ignore')
-    if topic.startswith('counter/'):
-        print(f"RECV {topic} {payload[:50]}…")
-        test_msgs.setdefault(topic, []).append((topic, payload, now))
-    else:  # $SYS/#
-        print(f" SYS {topic} {payload}")
-        sys_stats.append((topic, payload, now))
 
-# ─────────────────────────────────────────────────────
-# Single‐test runner
-# ─────────────────────────────────────────────────────
+
+# def on_message_sub(client, userdata, msg):
+#     now = int(time.time() * 1000)
+#     topic = msg.topic
+#     payload = msg.payload.decode(errors='ignore')
+#     if topic.startswith('counter/'):
+#         print(f"RECV {topic} {payload[:50]}…")
+#         test_msgs.setdefault(topic, []).append((topic, payload, now))
+#     else:  # $SYS/#
+#         print(f" SYS {topic} {payload}")
+#         sys_stats.append((topic, payload, now))
+
 
 def run_test(pub_qos, sub_qos, delay, size, instances):
     # Clear logs
-    test_msgs.clear()
-    sys_stats.clear()
+    test_msgs = {}
+    sys_stats = {}
 
+    done_event = threading.Event()
     # 1) Start subscriber client
     sub_client = mqtt.Client(
         client_id='analyser_sub',
-        userdata={'sub_qos': sub_qos},
+        userdata={'sub_qos': sub_qos, 'done_event': done_event, 'instances': instances},
         callback_api_version=mqtt.CallbackAPIVersion.VERSION2
     )
     sub_client.on_connect = on_connect_sub
@@ -91,7 +80,11 @@ def run_test(pub_qos, sub_qos, delay, size, instances):
     pub_client.publish('request/go',            '1')
 
     # 3) Let the 30 s burst run + 2 s buffer
-    time.sleep(32)
+    # time.sleep(32)
+    print('START WAITING----------------------------------------------------')
+
+    done_event.wait()
+    sys.exit(1)
 
     # 4) Clean up MQTT clients
     pub_client.loop_stop()
@@ -123,9 +116,6 @@ def run_test(pub_qos, sub_qos, delay, size, instances):
     }
 
 
-# ─────────────────────────────────────────────────────
-# Main sweep
-# ─────────────────────────────────────────────────────
 
 def main():
     # Launch the publisher subprocess
