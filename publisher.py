@@ -85,9 +85,10 @@ class PubWorker(threading.Thread):
                     self.client.publish(topic, msg, qos=qos)
                     count += 1
                     if delay: time.sleep(delay/1000)
-                print(f"[Worker-{self.id}] sent {count} msgs")
+                
                 done_topic = f"total_counts/{str(self.id)}"
-                self.client.publish(done_topic, str(count), qos=2)
+                print(f"[Worker-{self.id}] sent {count} msgs", done_topic)
+                self.client.publish(done_topic, str(count), qos=1)
             else:
                 print(f"[Worker-{self.id}] inactive (instancecount={self.config['instancecount']})")
                 

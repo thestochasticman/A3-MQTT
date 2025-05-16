@@ -1,2 +1,2 @@
-pub_qos,sub_qos,delay,size,instances,received
-0,0,0,0,1,1300679
+pub_qos,sub_qos,delay,size,instances,received,sent_pub1,sent_pub2,sent_pub3,sent_pub4,sent_pub5,sent_pub6,sent_pub7,sent_pub8,sent_pub9,sent_pub10
+0,0,0,0,1,1309079,1593016
