@@ -23,7 +23,7 @@ class PublisherClient(mqtt.Client):
             clean_session=False,
             protocol=MQTTProtocolVersion.MQTTv311,
             transport=transport,
-            manual_ack=manual_ack,
+            manual_ack=manual_ack
         )
         s.instructions = Instructions()
 
@@ -35,6 +35,7 @@ class PublisherClient(mqtt.Client):
         rc: int,
         properties=None,
     ):
+
         if rc == 0:
             print(f"{s._client_id}, Connected to {s._host, s._port}")
         else:
@@ -61,7 +62,7 @@ class PublisherClient(mqtt.Client):
                     daemon=True,
                     name=f"PublisherWorker-{s.id}"
                 ).start()
-                print(f"Returning after run {s.id}")
+                s.instructions = Instructions()
             s.instructions = Instructions()
            
     def run(s: Self, instancecount: int, qos: int, delay: int, messagesize: int, go: str):

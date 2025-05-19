@@ -12,6 +12,7 @@ import time
 import threading
 import subprocess
 import paho.mqtt.client as mqtt
+from paho.mqtt.client import CallbackAPIVersion
 
 BROKER_HOST     = 'localhost'
 BROKER_PORT     = 1883
@@ -73,47 +74,120 @@ def connect_sub(qos: int, instances: int, subscribe_event, total_counts_event):
         callback_api_version=mqtt.CallbackAPIVersion.VERSION2
     )
 
-def run_test(pub_qos, sub_qos, delay, size, instances):
+# def run_test(pub_qos, sub_qos, delay, size, instances):
 
+#     test_msgs.clear()
+#     sys_stats.clear()
+#     subscribe_event = threading.Event()
+#     total_counts_event      = threading.Event()
+#     sub_client = connect_sub(sub_qos, instances, subscribe_event, total_counts_event)
+#     sub_client.on_connect = on_connect_sub
+#     sub_client.on_message = on_message_sub
+#     sub_client.on_subscribe = on_subscribe_sub
+#     sub_client.connect(BROKER_HOST, BROKER_PORT)
+#     sub_client.loop_start()
+#     subscribe_event.wait()
+#     subscribe_event.clear()
+
+#     # 2) Control‐publisher to send parameters + GO
+#     pub_client = mqtt.Client(
+#         client_id='analyser_pub',
+#         callback_api_version=mqtt.CallbackAPIVersion.VERSION2
+#     )
+#     pub_client.connect(BROKER_HOST, BROKER_PORT, )
+#     pub_client.loop_start()
+#     pub_client.publish('request/qos',           str(pub_qos))
+#     pub_client.publish('request/delay',         str(delay))
+#     pub_client.publish('request/messagesize',   str(size))
+#     pub_client.publish('request/instancecount', str(instances))
+#     pub_client.publish('request/go',            '1')
+
+
+#     # # 3) Let the 30 s burst run + 2 s buffer
+#     time.sleep(32)
+
+#     # # 4) Clean up MQTT clients
+#     # total_counts_event.wait()
+#     # total_counts_event.clear()
+#     pub_client.loop_stop()
+#     sub_client.loop_stop()
+#     pub_client.disconnect()
+#     sub_client.disconnect()
+
+#     # # 5) Persist $SYS/# logs for this test
+#     ensure_dir(SYS_LOG_DIR)
+#     sys_path = os.path.join(
+#         SYS_LOG_DIR,
+#         f"sys_{pub_qos}_{sub_qos}_{delay}_{size}_{instances}.csv"
+#     )
+#     with open(sys_path, 'w', newline='') as f:
+#         writer = csv.writer(f)
+#         writer.writerow(['topic', 'payload', 'recv_ts'])
+#         writer.writerows(sys_stats)
+
+#     # 6) Summarize count of received messages
+#     total_received = sum(len(v) for v in test_msgs.values())
+
+#     return {
+#         'pub_qos': pub_qos,
+#         'sub_qos': sub_qos,
+#         'delay': delay,
+#         'size': size,
+#         'instances': instances,
+#         'received': total_received
+#     }
+
+def run_test(pub_qos, sub_qos, delay, size, instances):
     test_msgs.clear()
     sys_stats.clear()
-    subscribe_event = threading.Event()
-    total_counts_event      = threading.Event()
-    sub_client = connect_sub(sub_qos, instances, subscribe_event, total_counts_event)
-    sub_client.on_connect = on_connect_sub
-    sub_client.on_message = on_message_sub
-    sub_client.on_subscribe = on_subscribe_sub
-    sub_client.connect(BROKER_HOST, BROKER_PORT)
-    sub_client.loop_start()
-    subscribe_event.wait()
+
+    # 1) Prepare synchronization primitives
+    subscribe_event      = threading.Event()
+    total_counts_event   = threading.Event()
+
+    # 2) Build our single client, with all the userdata it needs
+    userdata = {
+        'sub_qos':               sub_qos,
+        'subscribe_acks':        0,
+        'instances':             instances,
+        'total_counts_received': 0,
+        'subscribe_event':       subscribe_event,
+        'total_counts_event':    total_counts_event
+    }
+    client = mqtt.Client(
+        client_id="analyser",
+        userdata=userdata,
+        callback_api_version=CallbackAPIVersion.VERSION2,
+        clean_session=False
+    )
+
+    # 3) Wire up callbacks
+    client.on_connect   = on_connect_sub
+    client.on_subscribe = on_subscribe_sub
+    client.on_message   = on_message_sub
+
+    # 4) Connect & subscribe
+    client.connect(BROKER_HOST, BROKER_PORT)
+    client.loop_start()
+    subscribe_event.wait()       # wait until we've got all 3 SUBACKs
     subscribe_event.clear()
 
-    # 2) Control‐publisher to send parameters + GO
-    pub_client = mqtt.Client(
-        client_id='analyser_pub',
-        callback_api_version=mqtt.CallbackAPIVersion.VERSION2
-    )
-    pub_client.connect(BROKER_HOST, BROKER_PORT)
-    pub_client.loop_start()
-    pub_client.publish('request/qos',           str(pub_qos))
-    pub_client.publish('request/delay',         str(delay))
-    pub_client.publish('request/messagesize',   str(size))
-    pub_client.publish('request/instancecount', str(instances))
-    pub_client.publish('request/go',            '1')
+    # 5) Publish our “control” messages on the same client
+    #    (you can specify qos here if you like)
+    client.publish('request/qos',           str(pub_qos))
+    client.publish('request/delay',         str(delay))
+    client.publish('request/messagesize',   str(size))
+    client.publish('request/instancecount', str(instances))
+    client.publish('request/go',            '1')
 
+    # 6) Let the 30 s burst happen + a small buffer
+    time.sleep(40)
 
-    # # 3) Let the 30 s burst run + 2 s buffer
-    time.sleep(32)
+    # 7) Tear down
+    client.loop_stop()
+    client.disconnect()
 
-    # # 4) Clean up MQTT clients
-    # total_counts_event.wait()
-    # total_counts_event.clear()
-    pub_client.loop_stop()
-    sub_client.loop_stop()
-    pub_client.disconnect()
-    sub_client.disconnect()
-
-    # # 5) Persist $SYS/# logs for this test
+    # 8) Persist $SYS/# logs for this test
     ensure_dir(SYS_LOG_DIR)
     sys_path = os.path.join(
         SYS_LOG_DIR,
@@ -124,18 +198,17 @@ def run_test(pub_qos, sub_qos, delay, size, instances):
         writer.writerow(['topic', 'payload', 'recv_ts'])
         writer.writerows(sys_stats)
 
-    # 6) Summarize count of received messages
+    # 9) Count what we saw on counter/#
     total_received = sum(len(v) for v in test_msgs.values())
 
     return {
-        'pub_qos': pub_qos,
-        'sub_qos': sub_qos,
-        'delay': delay,
-        'size': size,
+        'pub_qos':   pub_qos,
+        'sub_qos':   sub_qos,
+        'delay':     delay,
+        'size':      size,
         'instances': instances,
-        'received': total_received
+        'received':  total_received
     }
-
 
 
 def main():
