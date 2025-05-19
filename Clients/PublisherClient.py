@@ -79,6 +79,8 @@ class PublisherClient(mqtt.Client):
                 s.publish(topic, msg, qos=qos)
                 count += 1
                 if delay: sleep(delay)
+            sleep(3)
+            s.publish(f"publishers_summary/{s.id}", count, qos=2)
             print(f"[Publisher Client Worker-{s.id}] finished burst on {topic}\n")
         return None
 
@@ -115,4 +117,3 @@ if __name__ == '__main__':
     publisher_client = PublisherClient(id=1)
     publisher_client.connect(BROKER, PORT)
     publisher_client.loop_forever()
-

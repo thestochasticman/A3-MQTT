@@ -7,11 +7,11 @@ from time import time
 import threading
 
 @dataclass
-class UserData:
-    subscribe_event : threading.Event
-    num_subs        : int = 3
+class UserData:    
+    done_event  : threading.Event
+    instances   : int
     
-class AnalyserClient(mqtt.Client):
+class AnalyserClient2(mqtt.Client):
     def __init__(
         s: Self,
         client_id: str,
@@ -35,43 +35,33 @@ class AnalyserClient(mqtt.Client):
         s.client_id = client_id
         s.userdata = userdata
         s.current_subs = 0
+
+        s.publishers_summary = {}
     
     def on_connect(
         s: Self,
-        client: 'AnalyserClient',
+        client: 'AnalyserClient2',
         userdata: None,
         flags: mqtt.ConnectFlags,
         rc: int,
         properties=None
     ):
         if rc == 0:
-            s.subscribe('counter/#', qos=s.qos)
-        else:
-            print(f"{s.client_id} Connection to {s._host, s._port}, failed, rc={rc}")
+            s.subscribe('publishers_summary/#', qos=2)
+        #     # print(f"{s.client_id}, Connected to {s._host, s._port}")
+        #     pass
+        # else:
+        #     # print(f"{s.client_id} Connection to {s._host, s._port}, failed, rc={rc}")
 
-    def on_subscribe(
-        s: Self,
-        client: 'AnalyserClient',
-        userdata: UserData,
-        mid: int,
-        granted_qos: int,
-        properties=None
-    ):
-        # print(f"{s.client_id} SUBACK received: mid={mid}, granted_qos={granted_qos}")
-        s.userdata.subscribe_event.set()
-
-    def publish_instructions(s: Self, pub_qos: int, delay: int, size: int, instances: int):
-        s.publish('request/qos',           str(pub_qos))
-        s.publish('request/delay',         str(delay))
-        s.publish('request/messagesize',   str(size))
-        s.publish('request/instancecount', str(instances))
-        s.publish('request/go',            '1')
-
-    def on_message(s: Self, client: 'AnalyserClient', userdata: UserData, msg):
+    def on_message(s: Self, client: 'AnalyserClient2', userdata: UserData, msg):
         time_of_receive = int(time() * 1000)
         topic = msg.topic
         payload = msg.payload.decode()
 
-        if topic.startswith('counter/'):
-            s.publisher_msgs += [(topic, payload, time_of_receive)]
+        if topic.startswith('publishers_summary/'):
+            print(topic, payload)
+            s.publishers_summary[topic.split('/')[-1]] = payload
+            if len(s.publishers_summary) == s.userdata.instances:
+                s.userdata.done_event.set()
+
         s.ack(msg.mid, msg.qos)

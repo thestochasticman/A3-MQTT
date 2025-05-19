@@ -212,22 +212,24 @@ PORT     = 1883
 #         'received':  total_received
 #     }
 
+from Clients.AnalyserClient import UserData as UserData1
 from Clients.AnalyserClient import AnalyserClient
-from Clients.AnalyserClient import UserData
+from time import sleep
 
 def run_test(pub_qos, sub_qos, delay, size, instances):
 
     subscribe_event = threading.Event()
-    userdata = UserData(subscribe_event, 3)
+    done_event = threading.Event()
+    userdata = UserData1(subscribe_event, 3)
     client = AnalyserClient('AnalyserClient', qos=sub_qos, userdata=userdata)
     client.connect(BROKER, PORT)
     client.loop_start()
     subscribe_event.wait()
-    print('subscribed successfully')
     client.publish_instructions(pub_qos, delay, size, instances)
+    sleep(40)
+    client.loop_stop()
     client.disconnect()
 
-    
 def main():
     tests = [
         (pq, sq, d, s, inst)
@@ -238,19 +240,9 @@ def main():
         for inst in [1, 5, 10]
     ]
 
-
-    # Prepare the results CSV
-    # with open(RESULTS_FILE, 'w', newline='') as f:
-    #     writer = csv.DictWriter(f, fieldnames=[
-    #         'pub_qos', 'sub_qos', 'delay', 'size', 'instances', 'received'
-    #     ])
-    #     writer.writeheader()
-
-    # Run each test in sequence
-    for params in tests:
-        print(f"\nRunning test {params} …")
+    for i, params in enumerate(tests):
+        print(f"\nRunning test {params}.")
         result = run_test(*params)
-        break
         # Append result row
         # with open(RESULTS_FILE, 'a', newline='') as f:
         #     writer = csv.DictWriter(f, fieldnames=result.keys())
