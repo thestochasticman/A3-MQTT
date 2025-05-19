@@ -12,7 +12,6 @@ class PubWorker(threading.Thread):
     def __init__(self, instance_id):
         super().__init__(daemon=True)
         self.id = instance_id
-        # per-thread config and event
         self.config = {
             'qos': 0,
             'delay': 0,
@@ -88,7 +87,7 @@ class PubWorker(threading.Thread):
                 
                 done_topic = f"total_counts/{str(self.id)}"
                 print(f"[Worker-{self.id}] sent {count} msgs", done_topic)
-                self.client.publish(done_topic, str(count), qos=1)
+                self.client.publish(done_topic, str(count), qos=2)
             else:
                 print(f"[Worker-{self.id}] inactive (instancecount={self.config['instancecount']})")
                 
