@@ -103,11 +103,11 @@ def run_test(pub_qos, sub_qos, delay, size, instances):
 
 
     # # 3) Let the 30 s burst run + 2 s buffer
-    # time.sleep(32)
+    time.sleep(32)
 
     # # 4) Clean up MQTT clients
-    total_counts_event.wait()
-    total_counts_event.clear()
+    # total_counts_event.wait()
+    # total_counts_event.clear()
     pub_client.loop_stop()
     sub_client.loop_stop()
     pub_client.disconnect()
@@ -167,7 +167,7 @@ def main():
         with open(RESULTS_FILE, 'a', newline='') as f:
             writer = csv.DictWriter(f, fieldnames=result.keys())
             writer.writerow(result)
-        break
+        # break
         print(f"Completed {params}: received={result['received']} msgs")
 
     # Tear down the publisher

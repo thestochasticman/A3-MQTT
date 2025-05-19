@@ -52,32 +52,34 @@ class PublisherClient(mqtt.Client):
         val = msg.payload.decode()
         s.instructions.update(instruction, val)
         if s.instructions.check_if_received_full_instruction():
-            params = deepcopy(s.instructions.__dict__)
-            threading.Thread(
-                target=s.run,
-                kwargs=params,
-                daemon=True,
-                name=f"PublisherWorker-{s.id}"
-            ).start()
+            if s.id <= s.instructions.instancecount:
+                params = deepcopy(s.instructions.__dict__)
+                s.instructions = Instructions()
+                threading.Thread(
+                    target=s.run,
+                    kwargs=params,
+                    daemon=True,
+                    name=f"PublisherWorker-{s.id}"
+                ).start()
+                print(f"Returning after run {s.id}")
             s.instructions = Instructions()
-
-
+           
     def run(s: Self, instancecount: int, qos: int, delay: int, messagesize: int, go: str):
         count = 0
         topic = f"counter/{s.id}/{qos}/{delay}/{messagesize}"
         payload = 'x' * messagesize
         end_timestamp = time() + 30
         count = 0
-        print('hello ji')
         if s.id <= instancecount:
-            print(f"[Publisher Client Worker-{s.id}] starting burst on {topic}")
+            print(f"[Publisher Client Worker-{s.id}] starting burst on {topic}\n")
             while time() < end_timestamp:
                 ts = int(time() * 1000)
                 msg = f"{count}:{ts}:{payload}"
                 s.publish(topic, msg, qos=qos)
                 count += 1
                 if delay: sleep(delay)
-            print(f"[Publisher Client Worker-{s.id}] finished burst on {topic}")
+            print(f"[Publisher Client Worker-{s.id}] finished burst on {topic}\n")
+        return None
 
 @dataclass
 class Instructions:
@@ -88,7 +90,6 @@ class Instructions:
     go              : str | None = None
 
     def update(s: Self, instruction: str, val: str):
-        print(instruction)
         if instruction in ['instancecount', 'qos', 'delay', 'messagesize']:
             object.__setattr__(s, instruction, int(val))
         if instruction == 'go':
@@ -113,5 +114,4 @@ if __name__ == '__main__':
     publisher_client = PublisherClient(id=1)
     publisher_client.connect(BROKER, PORT)
     publisher_client.loop_forever()
-    print('jhj')
 
