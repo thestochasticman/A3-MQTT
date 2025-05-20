@@ -60,8 +60,9 @@ class AnalyserClient(mqtt.Client):
         # print(f"{s.client_id} SUBACK received: mid={mid}, granted_qos={granted_qos}")
         s.userdata.subscribe_event.set()
 
-    def publish_instructions(s: Self, pub_qos: int, delay: int, size: int, instances: int):
-        s.publish('request/qos',           str(pub_qos))
+    def publish_instructions(s: Self, pub_qos: int, sub_qos: int, delay: int, size: int, instances: int):
+        s.publish('request/pub_qos',       str(pub_qos))
+        s.publish('request/sub_qos',       str(sub_qos))
         s.publish('request/delay',         str(delay))
         s.publish('request/messagesize',   str(size))
         s.publish('request/instancecount', str(instances))

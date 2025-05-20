@@ -1,58 +1,9 @@
-# from Clients.PublisherClient import PublisherClient
-# from time import sleep
-
-# # if __name__ == '__main__':
-# #     BROKER = 'localhost'
-# #     PORT   = 1883
-# #     NUM_THREADS = 10
-# #     NUM_CLIENTS = 10
-
-# #     clients = [PublisherClient(id=i+1) for i in range(NUM_CLIENTS)]
-
-# #     for client in clients:
-# #         client.connect(BROKER, PORT)
-# #         client.loop_start()
-
-# #     # Now `clients` holds all your running PublisherClient instances.
-# #     # Keep the main thread alive so they don’t all exit immediately:
-# #     try:
-# #         while True:
-# #             sleep(1)
-# #     except KeyboardInterrupt:
-# #         # Clean shutdown
-# #         for client in clients:
-# #             client.loop_stop()
-# #             client.disconnect()
-
-# class PublisherManager:
-#     def __init__(self, n_clients):
-#         self.clients = [PublisherClient(id=i) for i in range(1, n_clients+1)]
-
-#     def start_all(self, broker, port):
-#         for c in self.clients:
-#             c.connect(broker, port)
-#             c.loop_start()
-
-#     def stop_all(self):
-#         for c in self.clients:
-#             c.loop_stop()
-#             c.disconnect()
-
-# if __name__ == "__main__":
-#     BROKER = 'localhost'
-#     PORT   = 1883
-#     mgr = PublisherManager(10)
-#     mgr.start_all(BROKER, PORT)
-#     try:
-#         while True: sleep(1)
-#     except KeyboardInterrupt:
-#         mgr.stop_all()
-
-
-    
 
 import paho.mqtt.client as mqtt
 from pandas import DataFrame
+from os.path import exists
+from os import makedirs
+from os import mkdir
 import threading
 import time
 
@@ -66,13 +17,14 @@ class PubWorker(threading.Thread):
         self.id = instance_id
         # per-thread config and event
         self.config = {
-            'qos': 0,
+            'sub_qos': 0,
             'delay': 0,
             'messagesize': 0,
-            'instancecount': 0
+            'instancecount': 0,
+            'pub_qos': 0
         }
         self.subscribe_event = threading.Event()
-        self.total_subscriptions = 5
+        self.total_subscriptions = 6
         self.current_subscriptions = 0
         self.go_event = threading.Event()
         self.client = mqtt.Client(client_id=f'pub-{instance_id:02d}', callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
@@ -93,7 +45,8 @@ class PubWorker(threading.Thread):
             # print(f"Broker granted the following QOS", print(mid))
 
     def on_connect(self, client, userdata, flags, rc, properties=None):
-        client.subscribe('request/qos',)
+        client.subscribe('request/pub_qos')
+        client.subscribe('request/sub_qos',)
         client.subscribe('request/delay')
         client.subscribe('request/messagesize')
         client.subscribe('request/instancecount')
@@ -117,25 +70,31 @@ class PubWorker(threading.Thread):
             self.go_event.wait()
             self.go_event.clear()
             if self.id <= self.config['instancecount']:
-                qos   = self.config['qos']
+                pub_qos   = self.config['pub_qos']
+                sub_qos = self.config['sub_qos']
                 delay = self.config['delay']
                 size  = self.config['messagesize']
                 payload = 'x' * size
-                topic   = f"counter/{self.id}/{qos}/{delay}/{size}"
-                path_logs = f"publisher_logs/{self.id}-{qos}-{delay}-{size}.csv"
+                topic   = f"counter/{self.id}/{pub_qos}/{delay}/{size}"
                 end_t = time.time() + 30
                 count = 0
-                msgs = []
                 print(f"[Worker-{self.id}] starting burst on {topic}")
                 while time.time() < end_t:
                     ts = int(time.time()*1000)
                     msg = f"{count}:{ts}:{payload}"
-                    msgs += [msg]
-                    self.client.publish(topic, msg, qos=qos)
+                    self.client.publish(topic, msg, qos=pub_qos)
                     count += 1
-                DataFrame(msgs).to_csv(path_logs)
+                    time.sleep(delay/1000)
+                
+                logs_dir = f"publisher_logs/{self.id}/{pub_qos}-{sub_qos}-{delay}-{size}-{self.config['instancecount']}"
+                if not exists(logs_dir): makedirs(logs_dir)
+                log_path = f"{logs_dir}/{self.id}.txt"
+                
+                with open(log_path, 'w') as f:
+                    f.write(f"sent:{count}\n")
                 
 if __name__ == '__main__':
+    if not exists('publisher_logs'): mkdir('publisher_logs')
     # spawn all 10 workers up front
     workers = [PubWorker(i) for i in range(1, NUM_THREADS+1)]
     for w in workers: w.start()
@@ -148,3 +107,4 @@ if __name__ == '__main__':
         for w in workers:
             w.client.loop_stop()
             w.client.disconnect()
+
