@@ -40,8 +40,7 @@ def main():
         result = run_test(*params)
         pq, sq, d, s, inst = params
         logs_path = f"analyser_logs/{pq}-{sq}-{d}-{s}-{inst}.csv"
-        DataFrame(result['counter_msgs']).to_csv(logs_path)
-
+        DataFrame.from_records(result['counter_msgs']).to_csv(logs_path)
         # Append result row
         # with open(RESULTS_FILE, 'a', newline='') as f:
         #     writer = csv.DictWriter(f, fieldnames=result.keys())

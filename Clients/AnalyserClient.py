@@ -74,5 +74,11 @@ class AnalyserClient(mqtt.Client):
         payload = msg.payload.decode()
 
         if topic.startswith('counter/'):
-            s.publisher_msgs += [(topic, payload, time_of_receive)]
+            s.publisher_msgs += [
+                {
+                    'id': topic.split('/')[0],
+                    'msg': payload,
+                    'time_of_receive': time_of_receive
+                }
+            ]
         s.ack(msg.mid, msg.qos)

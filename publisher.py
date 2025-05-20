@@ -3,6 +3,7 @@ import paho.mqtt.client as mqtt
 from pandas import DataFrame
 from os.path import exists
 from os import makedirs
+from os import remove
 from os import mkdir
 import threading
 import time
@@ -64,7 +65,10 @@ class PubWorker(threading.Thread):
         self.subscribe_event.wait()
         self.subscribe_event.clear()
         print(f"[Worker-{self.id}] ready, waiting for GO")
-
+        
+        
+        path_csv = f"publisher_logs/{self.id}.csv"
+        if exists(path_csv): remove(path_csv)
         df = DataFrame()
         while True:
             self.go_event.wait()
@@ -85,13 +89,28 @@ class PubWorker(threading.Thread):
                     self.client.publish(topic, msg, qos=pub_qos)
                     count += 1
                     time.sleep(delay/1000)
+
+                str_config = '-'.join(
+                    [
+                        str(pub_qos),
+                        str(sub_qos),
+                        str(delay),
+                        str(size),
+                        str(self.config['instancecount'])
+                    ]
+                )
+                df = DataFrame.from_records([{'config': str_config, 'cont': count}])
+                df.to_csv(path_csv, mode='a', header=True if not exists(path_csv) else False)
                 
-                logs_dir = f"publisher_logs/{self.id}/{pub_qos}-{sub_qos}-{delay}-{size}-{self.config['instancecount']}"
-                if not exists(logs_dir): makedirs(logs_dir)
-                log_path = f"{logs_dir}/{self.id}.txt"
+                # logs_dir = f"publisher_logs/{self.id}/{pub_qos}-{sub_qos}-{delay}-{size}-{self.config['instancecount']}"
+                # makedirs('publisher_logs')
                 
-                with open(log_path, 'w') as f:
-                    f.write(f"sent:{count}\n")
+                # if not exists(logs_dir): makedirs(logs_dir)
+                # log_path = f"{logs_dir}/{self.id}.txt"
+                
+                # with open(log_path, 'w') as f:
+                #     f.write(f"sent:{count}\n")
+
                 
 if __name__ == '__main__':
     if not exists('publisher_logs'): mkdir('publisher_logs')
