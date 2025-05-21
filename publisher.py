@@ -7,7 +7,6 @@ BROKER_PORT = 1883
 def start_publisher(pid: int):
     client = PublisherClient(id=pid, host=BROKER_HOST, port=BROKER_PORT)
     client.run()              
-
 threads = []
 for pid in range(1, 11):       
     t = threading.Thread(

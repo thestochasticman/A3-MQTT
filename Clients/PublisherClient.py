@@ -5,9 +5,15 @@ from dataclasses import dataclass
 import paho.mqtt.client as mqtt
 from time import perf_counter
 from copy import deepcopy
+from hashlib import md5
 from time import time
 from time import sleep
 import threading
+
+def start_id_from_instr(instr) -> int:
+    cfg = f"{instr.pub_qos}-{instr.delay}-{instr.messagesize}-{instr.instancecount}"
+    digest = md5(cfg.encode()).digest()
+    return (int.from_bytes(digest, "big") % 10) + 1
 
 @dataclass
 class Instructions:
@@ -37,10 +43,8 @@ class Instructions:
         return True if condition else False
 
     def check_if_can_start_publishing(s: Self, id: int):
-        if id <= s.instancecount and s.check_if_received_full_instruction():
-            return True
-        else:
-            return False
+        start = start_id_from_instr(s)
+        return ((id-start) % 10) < s.instancecount
 
 class PublisherClient(mqtt.Client):
     def __init__(
@@ -133,6 +137,7 @@ class PublisherClient(mqtt.Client):
             count += 1
             s.publish(topic, msg, qos=i.pub_qos)
             sleep(i.delay/1000)
+        s.publish('/'.join(['total_counts', str(s.id)]), str(count), qos=2)
 
     def run(s: Self):
         s.connect(s.host, s.port)
@@ -142,9 +147,10 @@ class PublisherClient(mqtt.Client):
             s.go_event.wait()
             print('start burst', s.id)
             s.burst(deepcopy(s.instructions))
-            s.go_event.clear()
-            print('burst over', s.id)
             s.instructions = Instructions()
+            print('burst over', s.id)
+            s.go_event.clear()
+            
             
 if __name__ == '__main__':
     VERSION = CallbackAPIVersion.VERSION2

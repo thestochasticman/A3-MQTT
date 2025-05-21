@@ -38,7 +38,7 @@ class AnalyserClient(mqtt.Client):
         s.userdata = userdata
         s.current_subs = 0
         s.sys_messeges = []
-        s.done_count = 0
+        s.total_counts = {}
     
     def on_connect(
         s: Self,
@@ -52,6 +52,7 @@ class AnalyserClient(mqtt.Client):
             s.subscribe('counter/#', qos=s.qos)
             s.subscribe('$SYS/#', qos=s.qos)
             s.subscribe('publisher_counts/#', qos=s.qos)
+            s.subscribe('total_counts/#', qos=2)
 
         else:
             print(f"{s.client_id} Connection to {s._host, s._port}, failed, rc={rc}")
@@ -102,6 +103,13 @@ class AnalyserClient(mqtt.Client):
                     'time_of_receive': time_of_receive
                 }
             ]
-        
+
+        if topic.startswith('total_counts/'):
+            publisher_id = int(topic.split('/')[-1])
+
+            s.total_counts[publisher_id] = int(payload)
+            if len(s.total_counts) == s.userdata.num_instances:
+                s.userdata.done_event.set()
+            print(topic, payload)
         s.ack(msg.mid, msg.qos)
 

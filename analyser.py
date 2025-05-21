@@ -1,27 +1,29 @@
 from Clients.AnalyserClient import UserData as UserData1
 from Clients.AnalyserClient import AnalyserClient
-import threading
 from time import sleep
-
+import threading
 
 BROKER = 'localhost'
 PORT   = 1883
+
 def run_test(pub_qos, sub_qos, delay, size, instances):
     subscribe_event = threading.Event()
     done_event = threading.Event()
-    userdata = UserData1(subscribe_event, done_event, instances, num_subs=3)
+    userdata = UserData1(subscribe_event, done_event, instances, num_subs=4)
     client = AnalyserClient('AnalyserClient', qos=sub_qos, userdata=userdata)
     client.connect(BROKER, PORT)
     client.loop_start()
     subscribe_event.wait()
     client.publish_instructions(pub_qos, sub_qos, delay, size, instances)
-    sleep(31)
+    done_event.wait()
     client.loop_stop()
     client.disconnect()
     return {
         'counter_msgs': client.publisher_msgs,
         'sys_msgs': client.sys_messeges
     }
+
+    
 
 def main():
     from os import makedirs
