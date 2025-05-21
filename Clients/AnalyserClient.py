@@ -9,7 +9,9 @@ import threading
 @dataclass
 class UserData:
     subscribe_event : threading.Event
-    num_subs        : int = 3
+    done_event      : threading.Event
+    num_instances   : int
+    num_subs        : int = 2
     
 class AnalyserClient(mqtt.Client):
     def __init__(
@@ -35,6 +37,8 @@ class AnalyserClient(mqtt.Client):
         s.client_id = client_id
         s.userdata = userdata
         s.current_subs = 0
+        s.sys_messeges = []
+        s.done_count = 0
     
     def on_connect(
         s: Self,
@@ -46,6 +50,9 @@ class AnalyserClient(mqtt.Client):
     ):
         if rc == 0:
             s.subscribe('counter/#', qos=s.qos)
+            s.subscribe('$SYS/#', qos=s.qos)
+            s.subscribe('publisher_counts/#', qos=s.qos)
+
         else:
             print(f"{s.client_id} Connection to {s._host, s._port}, failed, rc={rc}")
 
@@ -57,8 +64,9 @@ class AnalyserClient(mqtt.Client):
         granted_qos: int,
         properties=None
     ):
-        # print(f"{s.client_id} SUBACK received: mid={mid}, granted_qos={granted_qos}")
-        s.userdata.subscribe_event.set()
+        s.current_subs += 1
+        if s.current_subs >= s.userdata.num_subs:
+            s.userdata.subscribe_event.set()
 
     def publish_instructions(s: Self, pub_qos: int, sub_qos: int, delay: int, size: int, instances: int):
         s.publish('request/pub_qos',       str(pub_qos))
@@ -67,6 +75,7 @@ class AnalyserClient(mqtt.Client):
         s.publish('request/messagesize',   str(size))
         s.publish('request/instancecount', str(instances))
         s.publish('request/go',            '1')
+        print('I published')
 
     def on_message(s: Self, client: 'AnalyserClient', userdata: UserData, msg):
         time_of_receive = int(time() * 1000)
@@ -74,11 +83,25 @@ class AnalyserClient(mqtt.Client):
         payload = msg.payload.decode()
 
         if topic.startswith('counter/'):
-            s.publisher_msgs += [
+            if payload.startswith('sent'):
+                print(payload)
+            else:
+                s.publisher_msgs += [
+                    {
+                        'id': topic.split('/')[1],
+                        'msg': payload,
+                        'time_of_receive': time_of_receive
+                    }
+                ]
+       
+        if topic.startswith('$SYS/'):
+            s.sys_messeges += [
                 {
-                    'id': topic.split('/')[0],
+                    'topic': topic,
                     'msg': payload,
                     'time_of_receive': time_of_receive
                 }
             ]
+        
         s.ack(msg.mid, msg.qos)
+
