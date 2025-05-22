@@ -1,50 +1,21 @@
 from paho.mqtt.client import CallbackAPIVersion
 from paho.mqtt.enums import MQTTProtocolVersion
+from Clients.Instructions import Instructions
 from typing_extensions import Self
-from dataclasses import dataclass
 import paho.mqtt.client as mqtt
 from time import perf_counter
+from pandas import DataFrame
+from os.path import dirname
+from os.path import exists
 from copy import deepcopy
-from hashlib import md5
-from time import time
+from os import makedirs
 from time import sleep
+from os import remove
+from time import time
 import threading
 
-def start_id_from_instr(instr) -> int:
-    cfg = f"{instr.pub_qos}-{instr.delay}-{instr.messagesize}-{instr.instancecount}"
-    digest = md5(cfg.encode()).digest()
-    return (int.from_bytes(digest, "big") % 10) + 1
+dir_logs = f"{dirname(dirname(__file__))}/logs/publisher"
 
-@dataclass
-class Instructions:
-    instancecount   : int | None = None
-    pub_qos         : int | None = None
-    delay           : int | None = None
-    messagesize     : int | None = None
-    go              : str | None = None
-
-    def update(s: Self, instruction: str, val: str):
-        if not s.check_if_received_full_instruction():
-            if instruction in ['instancecount', 'pub_qos', 'delay', 'messagesize']:
-                object.__setattr__(s, instruction, int(val))
-            if instruction == 'go':
-                s.go = 'go'
-
-    def check_if_received_full_instruction(s: Self):
-        condition = all(
-            [
-                isinstance(s.instancecount, int),
-                isinstance(s.pub_qos, int),
-                isinstance(s.delay, int),
-                isinstance(s.messagesize, int),
-                isinstance(s.go, str)
-            ]
-        )
-        return True if condition else False
-
-    def check_if_can_start_publishing(s: Self, id: int):
-        start = start_id_from_instr(s)
-        return ((id-start) % 10) < s.instancecount
 
 class PublisherClient(mqtt.Client):
     def __init__(
@@ -60,10 +31,10 @@ class PublisherClient(mqtt.Client):
         super().__init__(
             callback_api_version=CallbackAPIVersion.VERSION2,
             client_id=f"publisher_{id}",
-            clean_session=False,
+            clean_session=True,
             protocol=MQTTProtocolVersion.MQTTv311,
             transport=transport,
-            manual_ack=manual_ack
+            manual_ack=False
         )
         s.instructions = Instructions()
         s.id = id
@@ -73,6 +44,11 @@ class PublisherClient(mqtt.Client):
 
         s.go_event: threading.Event = threading.Event()
         s.subscribe_event: threading.Event = threading.Event()
+        s.path_logs = f"{dir_logs}/{s.id}.csv"
+        
+        makedirs(dir_logs, exist_ok=True)
+        if exists(s.path_logs):
+            remove(s.path_logs)
 
     def on_connect(
         s: Self,
@@ -84,16 +60,19 @@ class PublisherClient(mqtt.Client):
     ):
 
         if rc == 0:
-            # print(f"{s._client_id}, Connected to {s._host, s._port}")
-            s.subscribe('request/pub_qos',)
-            s.subscribe('request/delay')
-            s.subscribe('request/messagesize')
-            s.subscribe('request/instancecount')
-            s.subscribe('request/go')
+            pass
         else:
             print(f"{s._client_id} Connection to {s._host, s._port}, failed, rc={rc}")
 
-    
+    def subscribe_to_topics(s: Self):
+        s.subscribe('request/pub_qos')
+        s.subscribe('request/delay')
+        s.subscribe('request/messagesize')
+        s.subscribe('request/instancecount')
+        s.subscribe('request/go')
+        s.subscribe_event.wait()
+        s.subscribe_event.clear()
+
     def on_subscribe(
         s: Self,
         client: 'PublisherClient',
@@ -116,7 +95,18 @@ class PublisherClient(mqtt.Client):
                 s.go_event.set()
             else:
                 s.instructions = Instructions()
-        s.ack(msg.mid, msg.qos)
+        # s.ack(msg.mid, msg.qos)
+
+    def on_disconnect(
+        s: Self,
+        client: 'PublisherClient',
+        userdata: None,
+        disconnect_flags,
+        reason_code: int,
+        properties: None
+    ):
+        # print('disconnecting')
+        s.num_subscribed_topics = 0
 
     def burst(s: Self, i: Instructions):
         deadline = perf_counter() + 30
@@ -137,12 +127,14 @@ class PublisherClient(mqtt.Client):
             count += 1
             s.publish(topic, msg, qos=i.pub_qos)
             sleep(i.delay/1000)
-        s.publish('/'.join(['total_counts', str(s.id)]), str(count), qos=2)
+        
+        df = DataFrame.from_records([{'id': s.id, 'count': count}])
+        df.to_csv(s.path_logs)
 
     def run(s: Self):
         s.connect(s.host, s.port)
         s.loop_start()
-        s.subscribe_event.wait()
+        s.subscribe_to_topics()
         while True:
             s.go_event.wait()
             print('start burst', s.id)
@@ -150,7 +142,7 @@ class PublisherClient(mqtt.Client):
             s.instructions = Instructions()
             print('burst over', s.id)
             s.go_event.clear()
-            
+
             
 if __name__ == '__main__':
     VERSION = CallbackAPIVersion.VERSION2
