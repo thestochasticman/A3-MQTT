@@ -5,11 +5,13 @@ from Clients.analysis import analyse
 from typing_extensions import Self
 from dataclasses import dataclass
 import paho.mqtt.client as mqtt
+from pandas import DataFrame
 from pandas import read_csv
 from os.path import dirname
 from os.path import exists
 from random import Random
 from pprint import pprint
+from os import makedirs
 from time import sleep
 from os import remove
 from time import time
@@ -39,12 +41,16 @@ class AnalyserClient(mqtt.Client):
 
         s.host = host
         s.port = port
-        s.max_inflight_messages_set(2000)
         s.sub_qos = 0
         s.connect_event = threading.Event()
         s.subscribe_event = threading.Event()
         s.unsubscribe_event = threading.Event()
         s.done_event = threading.Event()
+
+        s.logs_path = f"{dir_analyser_logs}/report.csv"
+        makedirs(dir_analyser_logs, exist_ok=True)
+        if exists(s.logs_path):
+            remove(s.logs_path)
 
         s.publisher_msgs = []
         s.sys_stats = []
@@ -106,7 +112,7 @@ class AnalyserClient(mqtt.Client):
         s.publish('request/messagesize',   str(size))
         s.publish('request/instancecount', str(instances))
         s.publish('request/go',            '1')
-        print('published', s.sub_qos, s.instances)
+        print('published', s.sub_qos, s.instances, delay, size)
 
     def on_message(s: Self, client: 'AnalyserClient', userdata: None, msg):
         time_of_receive = int(time() * 1000)
@@ -151,6 +157,7 @@ class AnalyserClient(mqtt.Client):
         tests = s.get_tests()
         tests = Random(42).sample(tests, k=len(tests))
         for pub_qos, sub_qos, delay, size, instances in tests:
+            s.count_logs = {}
             s.instructions = Instructions(
                 instancecount=instances,
                 pub_qos=pub_qos,
@@ -168,10 +175,22 @@ class AnalyserClient(mqtt.Client):
                 sleep(1)
                 total_counts = s.get_total_msgs_sent_per_publisher()
             str_config = f"{pub_qos}-{sub_qos}-{delay}-{size}-{instances}"
-            analyse(str_config, total_counts, s.count_logs)
+
+            report = [
+                analyse(
+                    pub_qos,
+                    sub_qos,
+                    delay,
+                    size,
+                    instances,
+                    total_counts,
+                    s.count_logs
+                )
+            ]
+            DataFrame.from_records(report).to_csv(s.logs_path ,mode='a', header=True if not exists(s.logs_path) else False)
             s.loop_stop()
             s.disconnect()  
-            return
+
         
 
 if __name__ == '__main__':

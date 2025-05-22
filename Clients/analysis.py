@@ -87,12 +87,34 @@ def get_duplication_rate(rec_logs: dict):
         pcts += [pct]
     return round(sum(pcts)/len(pcts), 2)
     
-def analyse(str_config: str, pub_logs: dict, rec_logs: dict):
-    results = {}
-    results['str_config'] = str_config
-    results['rate_of_receive'] = get_rate_of_receive(rec_logs)
-    results['mean_msg_loss'] = get_message_loss_per_publisher(pub_logs, rec_logs)
-    results['out_of_order'] = get_out_of_order_rate_per_publisher(rec_logs)
-    results['duplication_rate'] = get_duplication_rate(rec_logs) 
-    results['mean_gap_ms'], results['std_gap_ms'] = get_mean_and_std_of_avg_msg_gap_per_publisher(rec_logs)
-    pprint(results)
+def analyse(
+        pub_qos: int,
+        sub_qos: int,
+        delay: int,
+        size: int,
+        instances: int,
+        pub_logs: dict,
+        rec_logs: dict
+    ):
+    results = {
+        'pub_qos': pub_qos,
+        'sub_qos': sub_qos,
+        'delay': delay,
+        'size': size,
+        'instances': instances,
+    }
+    # results['str_config'] = str_config
+    if len(rec_logs) > 0:
+        results['rate_of_receive'] = get_rate_of_receive(rec_logs)
+        results['mean_msg_loss'] = get_message_loss_per_publisher(pub_logs, rec_logs)
+        results['out_of_order'] = get_out_of_order_rate_per_publisher(rec_logs)
+        results['duplication_rate'] = get_duplication_rate(rec_logs) 
+        results['mean_gap_ms'], results['std_gap_ms'] = get_mean_and_std_of_avg_msg_gap_per_publisher(rec_logs)
+    
+    else:
+        results['rate_of_receive'] = 0
+        results['mean_msg_loss'] = 100
+        results['out_of_order'] = np.nan
+        results['duplication_rate'] = np.nan
+        results['mean_gap_ms'] = np.nan
+    return results
