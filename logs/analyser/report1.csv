@@ -1,0 +1,2 @@
+,pub_qos,sub_qos,delay,size,instances,rate_of_receive,mean_msg_loss,out_of_order,duplication_rate,mean_gap_ms,std_gap_ms
+0,0,1,100,4000,10,96.67,0.0,0.0,,103.76,0.02

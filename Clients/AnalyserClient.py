@@ -57,7 +57,6 @@ class AnalyserClient(mqtt.Client):
         s.client_id = client_id
         s.current_subs = 0
         s.sys_messeges = []
-        s.count_logs = {}
 
     def on_connect(
         s: Self,
@@ -120,10 +119,14 @@ class AnalyserClient(mqtt.Client):
         payload = msg.payload.decode()
 
         if topic.startswith('counter/'):
-            publisher_id = int(topic.split('/')[1])
-            counter, timestamp = payload.split(':')[:2]
-            record = {'ts_send': int(timestamp),'ts_rec': time_of_receive, 'counter': int(counter)}
-            s.count_logs.setdefault(publisher_id, []).append(record)
+            publisher_id, pub_qos, delay, size = topic.split('/')[1:]
+            if int(pub_qos) == s.instructions.pub_qos:
+                if int(delay) == s.instructions.delay:
+                    if int(size) == s.instructions.messagesize:
+                        counter, timestamp = payload.split(':')[:2]
+                        if int(timestamp) <= time_of_receive:
+                            record = {'ts_send': int(timestamp),'ts_rec': time_of_receive, 'counter': int(counter)}
+                            s.count_logs.setdefault(int(publisher_id), []).append(record)
 
     @staticmethod
     def get_tests():
@@ -151,7 +154,9 @@ class AnalyserClient(mqtt.Client):
 
         for publisher_id in publishers_that_are_running:
             remove(f"{dir_publisher_logs}/{publisher_id}.csv")
-        return total_counts
+
+        if len(total_counts) == s.instances:
+            return total_counts
 
     def run(s: Self):
         tests = s.get_tests()
@@ -190,7 +195,7 @@ class AnalyserClient(mqtt.Client):
             DataFrame.from_records(report).to_csv(s.logs_path ,mode='a', header=True if not exists(s.logs_path) else False)
             s.loop_stop()
             s.disconnect()  
-
+            sleep(1.0)
         
 
 if __name__ == '__main__':

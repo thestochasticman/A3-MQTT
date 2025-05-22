@@ -74,7 +74,7 @@ def get_mean_and_std_of_avg_msg_gap_per_publisher(rec_logs: dict):
         return df
 
     df = get_per_publisher_gap_stats(rec_logs)
-    return float(round(df['avg_gap_ms'].mean(), 2)), float(round(df['avg_gap_ms'].std(), 2))
+    return float(round(df['avg_gap_ms'].mean(), 2)), float(round(df['avg_gap_ms'].std(), 5))
 
 def get_duplication_rate(rec_logs: dict):
     pcts = []
@@ -84,8 +84,12 @@ def get_duplication_rate(rec_logs: dict):
         freq = Counter(counts)
         duplicate_count=  sum((n - 1) for n in freq.values() if n > 1)
         pct = 100 * duplicate_count / total if total else 0.0
+        if (len(counts) > len(set(counts))) and (pct == 0):
+            print('DUPLICATES!!')
+        else:
+            print('NO DUPLICATES')
         pcts += [pct]
-    return round(sum(pcts)/len(pcts), 2)
+    return round(sum(pcts)/len(pcts), 5)
     
 def analyse(
         pub_qos: int,

@@ -109,7 +109,7 @@ class PublisherClient(mqtt.Client):
         s.num_subscribed_topics = 0
 
     def burst(s: Self, i: Instructions):
-        deadline = perf_counter() + 30
+        deadline = time() + 30
         topic = '/'.join(
             [
                 'counter',
@@ -121,7 +121,7 @@ class PublisherClient(mqtt.Client):
         )
         count = 0
         payload = 'x' * i.messagesize
-        while perf_counter() < deadline:
+        while time() < deadline:
             timestamp = int(time() * 1000)
             msg = ':'.join([str(count), str(timestamp), payload])
             count += 1
@@ -142,7 +142,11 @@ class PublisherClient(mqtt.Client):
             s.instructions = Instructions()
             print('burst over', s.id)
             s.go_event.clear()
-
+            s.loop_stop()
+            s.disconnect()
+            s.connect(s.host, s.port)
+            s.loop_start()
+            s.subscribe_to_topics()
             
 if __name__ == '__main__':
     VERSION = CallbackAPIVersion.VERSION2
